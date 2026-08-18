@@ -1,9 +1,13 @@
-# qa-one-stop-solution
+# provider-cluster-cleanup
 
-An interactive agent for the repetitive QA ops chores: deleting provider VMs
-through the console API, and clearing infra cluster entries out of the database.
+Cleans up a tenant's provider clusters: deletes its VMs through the admin API,
+and removes its `infra-cluster` entries from the `ccp-ext-config` database.
 
-Replaces the hand-edited `delete45.sh` — no more pasting UUIDs into a bash array.
+Replaces the hand-edited `delete45.sh` — no more pasting UUIDs into a bash
+array, and no more running `kubectl port-forward` before touching Mongo.
+
+Ships as a local web UI (`npm start`) and a CLI (`npm run cli`) over the same
+core, so both behave identically.
 
 ## Setup
 
