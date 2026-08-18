@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QA One Stop</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --line: #2a2f3a;
+    --text: #e6e9ef; --dim: #8b93a3; --accent: #4f9cf9; --ok: #3fb950;
+    --warn: #d29922; --danger: #f85149; --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10;
+  }
+  header h1 { font-size: 15px; margin: 0 12px 0 0; font-weight: 600; letter-spacing: .2px; }
+  header .spacer { flex: 1; }
+
+  label.field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dim); }
+  select, input[type=text], input[type=password] {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 9px; font-size: 13px; font-family: inherit;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent); }
+  input[type=text].wide { min-width: 260px; }
+
+  button {
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 13px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+  button.danger { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
+  button.ghost { background: transparent; }
+
+  nav { display: flex; gap: 4px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  nav button {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0; padding: 10px 14px; color: var(--dim);
+  }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+
+  button.mode { border-radius: 20px; padding: 5px 14px; font-size: 12.5px; color: var(--dim); }
+  button.mode.active { background: var(--accent); border-color: var(--accent); color: #06121f; font-weight: 600; }
+
+  main { padding: 20px; max-width: 1200px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  .panel h2 { margin: 0 0 12px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); font-weight: 600; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row + .row { margin-top: 10px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tbody tr:hover { background: var(--panel2); }
+  .scroll { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 20px; font-size: 11px; border: 1px solid var(--line); color: var(--dim); }
+  .pill.active { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+  .pill.off { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+
+  .muted { color: var(--dim); }
+  .ok { color: var(--ok); } .bad { color: var(--danger); } .warn { color: var(--warn); }
+  .empty { color: var(--dim); padding: 24px; text-align: center; }
+
+  textarea {
+    width: 100%; min-height: 130px; background: var(--panel2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px; resize: vertical;
+  }
+  .drop { border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 20px; text-align: center; color: var(--dim); }
+  .drop.over { border-color: var(--accent); color: var(--text); }
+
+  dialog {
+    background: var(--panel); color: var(--text); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 20px; max-width: 460px; width: 92%;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.65); }
+  dialog h3 { margin: 0 0 10px; font-size: 15px; }
+
+  #toast {
+    position: fixed; bottom: 20px; right: 20px; background: var(--panel2);
+    border: 1px solid var(--line); border-left-width: 3px; border-radius: 6px;
+    padding: 11px 15px; max-width: 420px; opacity: 0; transform: translateY(8px);
+    transition: .18s; pointer-events: none; z-index: 50;
+  }
+  #toast.show { opacity: 1; transform: none; }
+  #toast.ok { border-left-color: var(--ok); }
+  #toast.bad { border-left-color: var(--danger); }
+  #toast.info { border-left-color: var(--accent); }
+
+  .log { background: #0b0d11; border: 1px solid var(--line); border-radius: 6px; padding: 12px; max-height: 300px; overflow: auto; }
+  .log div { font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>QA One Stop</h1>
+  <label class="field">env
+    <select id="env"></select>
+  </label>
+  <label class="field">admin token
+    <input type="password" id="token" placeholder="paste bearer token" style="width:190px">
+  </label>
+  <span id="tokenState" class="pill">no token</span>
+  <button id="mintToken" class="ghost" style="padding:4px 10px;font-size:12px"
+          title="Generate a fresh token from the configured credentials">get token</button>
+  <div class="spacer"></div>
+  <button id="toggleHosts" class="ghost" style="padding:4px 10px;font-size:12px">hosts</button>
+</header>
+
+<div id="hostBar" hidden style="padding:10px 20px;background:var(--panel2);border-bottom:1px solid var(--line)">
+  <div class="row">
+    <label class="field">admin API
+      <input type="text" id="hAdmin" style="width:330px" placeholder="https://dev-admin-lmu.apeiro-digital.com">
+    </label>
+    <label class="field">console API
+      <input type="text" id="hConsole" style="width:330px" placeholder="https://dev-console-lmu.apeiro-digital.com">
+    </label>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <label class="field">auth / Keycloak
+      <input type="text" id="hAuth" style="width:330px" placeholder="(blank = same as admin API)">
+    </label>
+    <button id="resetHosts" class="ghost">reset to config</button>
+    <div class="spacer"></div>
+    <span class="muted" style="font-size:11px">
+      Overrides config for this browser only. Switching environment reloads these.
+    </span>
+  </div>
+</div>
+
+<nav>
+  <button data-tab="vms" class="active">VM Cleanup</button>
+  <button data-tab="cluster">Cluster DB Cleanup</button>
+  <button data-tab="explorer">Cluster Explorer</button>
+  <button data-tab="audit">Audit Log</button>
+</nav>
+
+<main>
+
+  <!-- ============ VMs ============ -->
+  <section id="tab-vms">
+    <div class="panel">
+      <h2>1 · Choose the VMs</h2>
+      <div class="row" style="margin-bottom:12px">
+        <button id="modeFetch" class="mode active">Fetch from API</button>
+        <button id="modePaste" class="mode">Paste a list</button>
+      </div>
+
+      <!-- fetch mode -->
+      <div id="fetchMode">
+        <div class="row">
+          <label class="field">domain / tenant
+            <input type="text" id="fDomain" list="domainList" style="width:210px"
+                   placeholder="tenant-qa-01" autocomplete="off">
+            <datalist id="domainList"></datalist>
+          </label>
+          <label class="field">status
+            <select id="fStatus" style="width:110px">
+              <option value="Active" selected>Active</option>
+              <option value="Error">Error</option>
+              <option value="Deleted">Deleted</option>
+              <option value="">any</option>
+            </select>
+          </label>
+          <label class="field">name filter (regex, optional)
+            <input type="text" id="filter" style="width:200px" placeholder="^k8s-.*-xn55t9-">
+          </label>
+          <div class="spacer"></div>
+          <button id="loadVms" class="primary">Fetch VMs</button>
+        </div>
+        <p class="muted" style="margin:8px 0 0;font-size:12px">
+          Project and ccpid come back with each VM — nothing to look up or type.
+        </p>
+      </div>
+
+      <!-- paste mode -->
+      <div id="pasteMode" hidden>
+      <p class="muted" style="margin:0 0 10px;font-size:12.5px">
+        One VM per line. Paste your <code>delete45.sh</code> block as-is —
+        quotes, commas and <code>#</code> comments are ignored. Bare VM ids also
+        work and use the fallback domain/project below.
+      </p>
+      <textarea id="vmPaste" style="min-height:170px"
+placeholder='"tn-zikwj3wzwu|default-project|148|68d87387-5631-4c3b-b89e-165a6ca40cf9|k8s-tn-zikwj3wzwu-xn55t9-master1"
+"devops-tenant|default-project|191|8b61e3d9-a449-4923-ab26-6e66675bddd4|k8s-devops-tenant-hij07j-worker3"
+
+# or just ids, using the fallback below:
+0b93fd63-b7d9-4b80-9799-94cad90c55cf'></textarea>
+      <div class="row" style="margin-top:10px">
+        <span class="muted" style="font-size:12px">fallback for lines without a tenant:</span>
+        <label class="field">domain
+          <input type="text" id="domain" style="width:150px" placeholder="tn-zikwj3wzwu">
+        </label>
+        <label class="field">project
+          <input type="text" id="project" style="width:140px" placeholder="default-project">
+        </label>
+        <label class="field">project-id
+          <input type="text" id="projectId" style="width:70px" placeholder="148">
+        </label>
+        <div class="spacer"></div>
+        <button id="parseVms" class="primary">Check list</button>
+      </div>
+      </div>
+
+      <div id="parseInfo" style="margin-top:10px"></div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Select <span id="vmCount" class="muted"></span></h2>
+      <div class="row" style="margin-bottom:10px">
+        <button id="selAll" class="ghost">Select all</button>
+        <button id="selNone" class="ghost">Clear</button>
+        <div class="spacer"></div>
+        <label class="field"><input type="checkbox" id="vmDry" checked> dry run</label>
+        <button id="delVms" class="danger" disabled>Delete selected</button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th style="width:34px"></th><th>Name</th>
+            <th style="width:150px">Domain</th><th style="width:150px">Project</th>
+            <th style="width:290px">VM ID</th>
+          </tr></thead>
+          <tbody id="vmRows"><tr><td colspan="5" class="empty">Paste a list above and press “Check list”.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="vmResultPanel" hidden>
+      <h2>Result</h2>
+      <div class="log" id="vmResult"></div>
+    </div>
+  </section>
+
+  <!-- ============ Cluster ============ -->
+  <section id="tab-cluster" hidden>
+    <div class="panel">
+      <h2>1 · Upload the kubeconfig</h2>
+      <p class="muted" style="margin:0 0 10px;font-size:12.5px">
+        Used to open the <code>port-forward</code> to the config DB, so you don't
+        run kubectl yourself. Already have a tunnel on the configured port? It
+        gets reused and this step is optional.
+      </p>
+      <div class="drop" id="drop">
+        Drop a <strong>kubeconfig</strong> here, or
+        <label style="color:var(--accent);cursor:pointer;text-decoration:underline">
+          browse<input type="file" id="kcFile" hidden accept=".yaml,.yml,.conf,.config,text/*">
+        </label>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <label class="field">use kubeconfig
+          <select id="dbKcSelect" style="min-width:240px"></select>
+        </label>
+        <span id="dbKcState" class="pill">none uploaded</span>
+        <div class="spacer"></div>
+        <label class="field" title="Only the replica-set PRIMARY accepts deletes">
+          replica pod
+          <select id="dbPodIndex" style="width:170px">
+            <option value="">config default</option>
+            <option value="0">rs0-0</option>
+            <option value="1">rs0-1</option>
+            <option value="2">rs0-2</option>
+          </select>
+        </label>
+        <span id="dbRole" class="pill">role unknown</span>
+      </div>
+      <details style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer;font-size:12px">paste it instead</summary>
+        <textarea id="kcText" placeholder="apiVersion: v1&#10;kind: Config&#10;clusters: …" style="margin-top:8px"></textarea>
+      </details>
+      <div id="kcInfo" class="muted mono" style="margin-top:8px"></div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Choose the tenant</h2>
+      <div class="row">
+        <label class="field">tenant / domain
+          <input type="text" id="kcName" list="dbDomainList" style="width:230px"
+                 placeholder="tn-zikwj3wzwu" autocomplete="off">
+          <datalist id="dbDomainList"></datalist>
+        </label>
+        <button id="findCluster" class="primary">Find in DB</button>
+        <div class="spacer"></div>
+        <span class="muted mono" id="dbTarget" style="font-size:12px"></span>
+      </div>
+      <p class="muted" style="margin:8px 0 0;font-size:12px">
+        Matches on <code>domain</code> / <code>userDomain</code>. A full cluster
+        name (<code>k8s-tn-zikwj3wzwu-dilr6g</code>) or <code>uuid</code> targets
+        one cluster instead of every cluster in the tenant.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>3 · Matches <span id="matchCount" class="muted"></span></h2>
+      <div id="matches"><div class="empty">No lookup run yet.</div></div>
+    </div>
+
+    <div class="panel" id="clusterResultPanel" hidden>
+      <h2>Result</h2>
+      <div class="log" id="clusterResult"></div>
+    </div>
+  </section>
+
+  <!-- ============ Cluster Explorer ============ -->
+  <section id="tab-explorer" hidden>
+    <div class="panel">
+      <div class="row">
+        <label class="field">kubeconfig
+          <select id="kcSelect" style="min-width:220px"></select>
+        </label>
+        <label style="color:var(--accent);cursor:pointer;text-decoration:underline;font-size:12px">
+          upload<input type="file" id="kcUpload" hidden accept=".yaml,.yml,.conf,.config,text/*">
+        </label>
+        <label class="field">context
+          <select id="ctxSelect" style="min-width:180px"><option value="">(default)</option></select>
+        </label>
+        <label class="field">namespace
+          <select id="nsSelect" style="min-width:160px"><option value="*">all namespaces</option></select>
+        </label>
+        <div class="spacer"></div>
+        <label class="field"><input type="checkbox" id="autoRefresh"> auto-refresh 10s</label>
+        <button id="refreshK8s" class="ghost">Refresh</button>
+      </div>
+      <div class="row" id="kindRow" style="margin-top:12px"></div>
+    </div>
+
+    <div class="panel">
+      <h2 id="k8sTitle">Resources</h2>
+      <div class="row" style="margin-bottom:10px">
+        <input type="text" id="k8sFilter" class="wide" placeholder="filter by name…">
+        <div class="spacer"></div>
+        <span id="k8sCount" class="muted"></span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead id="k8sHead"></thead>
+          <tbody id="k8sRows"><tr><td class="empty">Pick a kubeconfig to begin.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel" id="detailPanel" hidden>
+      <h2 id="detailTitle">Detail</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button id="tabLogs" class="mode active">Logs</button>
+        <button id="tabDescribe" class="mode">Describe</button>
+        <button id="tabExec" class="mode">Exec</button>
+        <label class="field" id="containerField" hidden>container
+          <select id="containerSelect"></select>
+        </label>
+        <div class="spacer"></div>
+        <button id="detailClose" class="ghost">Close</button>
+      </div>
+
+      <div id="execBar" class="row" hidden style="margin-bottom:10px">
+        <input type="text" id="execCmd" class="wide" style="flex:1"
+               placeholder="e.g. mongosh --quiet --eval 'db.adminCommand({listDatabases:1})'">
+        <button id="execRun" class="primary">Run</button>
+      </div>
+      <p id="execHint" class="muted" hidden style="margin:0 0 10px;font-size:12px">
+        Runs via <code>kubectl exec … -- sh -c "&lt;command&gt;"</code> inside the container. Output is captured once, not streamed.
+      </p>
+
+      <div class="log" id="detailBody" style="max-height:420px"></div>
+    </div>
+  </section>
+
+  <!-- ============ Audit ============ -->
+  <section id="tab-audit" hidden>
+    <div class="panel">
+      <h2>Recent destructive actions</h2>
+      <div class="row" style="margin-bottom:10px">
+        <button id="loadAudit" class="ghost">Refresh</button>
+        <span class="muted" style="font-size:12px">last 100 entries from logs/audit-*.jsonl</span>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th style="width:150px">When</th><th style="width:150px">Task</th><th>Detail</th></tr></thead>
+          <tbody id="auditRows"><tr><td colspan="3" class="empty">Nothing logged yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<dialog id="confirmDlg">
+  <h3 id="confirmTitle">Confirm</h3>
+  <p id="confirmBody" class="muted" style="margin:0 0 12px"></p>
+  <p style="margin:0 0 6px;font-size:13px">Type <code id="confirmPhrase" class="mono" style="color:var(--danger)"></code> to proceed:</p>
+  <input type="text" id="confirmInput" style="width:100%" autocomplete="off">
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button id="confirmCancel" class="ghost">Cancel</button>
+    <button id="confirmGo" class="danger" disabled>Delete</button>
+  </div>
+</dialog>
+
+<div id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

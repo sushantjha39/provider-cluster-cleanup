@@ -1,0 +1,213 @@
+# qa-one-stop-solution config
+#
+#   cp config.example.yaml config.yaml
+#
+# Secrets belong in .env and are referenced here as ${VAR}. This file is
+# safe to commit; config.yaml and .env are gitignored.
+#
+# ---- Switching environments -------------------------------------------------
+# Each block under `environments:` is a complete target: console host, admin
+# host, Keycloak realm and config DB. Pick one with the dropdown in the UI, or
+# `--env <name>` on the CLI. Nothing is shared between them, so a dev token can
+# never be sent to prod.
+#
+# Two ways to point at a different host:
+#   1. Select a different environment block (below).
+#   2. Override a single value from .env — every host is written as
+#      ${VAR:-default}, so `ADMIN_BASE_URL=https://…` wins over the default
+#      without editing this file.
+
+defaultEnv: ${QA_ENV:-dev-lmu}
+
+environments:
+  dev-lmu:
+    baseUrl: ${CONSOLE_BASE_URL:-https://dev-console-lmu.apeiro-digital.com}
+    region: ${CE_REGION:-r001}
+    token: ${API_TOKEN}
+
+    # Pause between VM deletes so the provider API is not hammered.
+    deleteDelayMs: 1000
+
+    # ---- API endpoints -------------------------------------------------
+    # Placeholders {domain} {project} {vmId} are URL-encoded on substitution.
+    # Only `vmDelete` is confirmed (taken from delete45.sh). The list
+    # endpoints below are guesses — replace them with the real admin API
+    # paths and the pickers start populating automatically.
+    endpoints:
+      vmDelete: /api/v2.1/computes/domain/{domain}/project/{project}/computes/{vmId}/
+      vms: /api/v2.1/computes/domain/{domain}/project/{project}/computes/
+      # projects: /api/v2.1/domain/{domain}/projects/
+      # domains:  /api/v2.1/domains/
+
+    # ---- Admin API (separate host, separate token) ----------------------
+    # Project listing lives here, and it is where `ccpid` comes from — the
+    # value sent as the Project-ID header. Note ccpid is NOT the project's
+    # own `id` field.
+    #
+    # These tokens are short-lived (~5 minutes), so paste one into the UI
+    # rather than putting it in .env, and expect to re-paste it.
+    admin:
+      # Override any host without editing this file: ${VAR:-default} takes the
+      # env var when set and falls back to the value after :- when not.
+      baseUrl: ${ADMIN_BASE_URL:-https://dev-admin-lmu.apeiro-digital.com}
+      token: ${ADMIN_TOKEN}       # optional; leave blank to mint one below
+      # cookie: ${ADMIN_COOKIE}   # only if the endpoint wants the session cookie
+
+      # Mint tokens on demand instead of pasting them. Tokens last ~5 minutes,
+      # so they are cached and silently renewed just before expiry — a long
+      # delete run never dies halfway through.
+      auth:
+        # Keycloak host. Defaults to admin.baseUrl above; set it only when the
+        # identity provider sits on a different host.
+        baseUrl: ${AUTH_BASE_URL:-}
+        realm: ${AUTH_REALM:-cloud}
+        clientId: ${AUTH_CLIENT_ID:-controller}
+        grantType: password
+        username: ${ADMIN_USERNAME}
+        password: ${ADMIN_PASSWORD}
+        # tokenPath defaults to /auth/realms/{realm}/protocol/openid-connect/token
+        # tokenPath: /auth/realms/{realm}/protocol/openid-connect/token
+        # Or bypass all of the above with a full URL:
+        # tokenUrl: https://other-host/auth/realms/cloud/protocol/openid-connect/token
+      pageSize: 200               # the API defaults to 10; paging is automatic
+      endpoints:
+        # VM listing. Each record already carries the project name, the
+        # project id (== the Project-ID header value) and the owning
+        # organisation's platform_domain, so no extra lookup is needed.
+        computes: /adminapi/v2/compute/computes-list/
+        projects: /api/auth-service-admin/v1/projects
+
+    # ---- Fallback pick-lists -------------------------------------------
+    # Used when the endpoints above are absent or error, so the pickers still
+    # work instead of making you paste UUIDs.
+    domains:
+      - tn-zikwj3wzwu
+      - devops-tenant
+
+    projects:
+      - { name: default-project, id: 148 }
+      - { name: default-project, id: 191 }
+
+    # ---- Infra cluster database (MongoDB behind kubectl) ---------------
+    db:
+      driver: mongodb
+
+      # The app opens this port-forward itself and closes it afterwards, so
+      # you never run `kubectl port-forward` by hand. Set enabled: false if
+      # you already have a tunnel open in another terminal.
+      portForward:
+        enabled: true
+        namespace: uhc-dev
+        remotePort: 27017
+        localPort: 9095        # omit to grab any free port
+        kubeconfig: ${KUBECONFIG}   # optional; omit to use the default context
+        # context: my-context
+
+        # The config DB is a replica set, and only the PRIMARY accepts deletes.
+        # `podPattern` + `podIndex` pick which member to tunnel to; the UI
+        # exposes 0/1/2 so you can switch when a member is a secondary.
+        podPattern: compass-configdb-rs0-{index}
+        podIndex: 1
+
+      # {port} is replaced with the local port the forward actually got.
+      # Keep credentials in user/password — they are percent-encoded when the
+      # URI is assembled, so passwords containing @ : / stay intact.
+      uri: mongodb://localhost:{port}/?directConnection=true
+      user: ${MONGO_USER}
+      password: ${MONGO_PASSWORD}
+
+      database: ccp-ext-config       # the config DB holding cluster records
+
+      infraCluster:
+        collection: infra-cluster
+        primaryKey: _id
+
+        # Compared against the identifiers supplied (tenant name typed in, or
+        # pulled out of a kubeconfig). `domain`/`userDomain` hold the tenant —
+        # that is the normal way in. `name` and `uuid` allow targeting one
+        # specific cluster instead of every cluster in the tenant.
+        matchFields: [domain, userDomain, name, uuid]
+
+        # Shown in the confirmation table before anything is deleted.
+        displayFields: [_id, name, domain, project, type, state, region, az, created_at]
+
+        # Extra documents to remove with the cluster. `field` is the field on
+        # the other collection; `parentField` is the field on the cluster row
+        # to match it against (defaults to _id).
+        related: []
+        # Uncomment to also clear the tenant's VPC records:
+        # related:
+        #   - { collection: vpc_infrastructure, field: domain, parentField: domain }
+
+  # =========================================================================
+  # PRODUCTION — fill in the hosts, then select "prod" in the UI dropdown.
+  #
+  # Deliberately left without credentials: put PROD_* values in .env so a dev
+  # run can never pick up prod secrets by accident. Verify every host below
+  # before first use — the delete paths are identical to dev.
+  # =========================================================================
+  prod:
+    baseUrl: ${PROD_CONSOLE_BASE_URL:-https://console-lmu.dha.go.ke}
+    region: ${PROD_CE_REGION:-r001}
+    deleteDelayMs: 1500          # gentler pacing against production
+
+    endpoints:
+      vmDelete: /api/v2.1/computes/domain/{domain}/project/{project}/computes/{vmId}/
+      vms: /api/v2.1/computes/domain/{domain}/project/{project}/computes/
+
+    admin:
+      baseUrl: ${PROD_ADMIN_BASE_URL:-}
+      token: ${PROD_ADMIN_TOKEN}
+      pageSize: 200
+      endpoints:
+        computes: /adminapi/v2/compute/computes-list/
+        projects: /api/auth-service-admin/v1/projects
+
+      auth:
+        # Blank baseUrl falls back to admin.baseUrl above.
+        baseUrl: ${PROD_AUTH_BASE_URL:-}
+        realm: ${PROD_AUTH_REALM:-cloud}
+        clientId: ${PROD_AUTH_CLIENT_ID:-controller}
+        grantType: password
+        username: ${PROD_ADMIN_USERNAME}
+        password: ${PROD_ADMIN_PASSWORD}
+
+    db:
+      driver: mongodb
+      portForward:
+        enabled: true
+        namespace: ${PROD_DB_NAMESPACE:-uhc-prod}
+        remotePort: 27017
+        localPort: 9096          # different port so a dev tunnel is never reused
+        kubeconfig: ${PROD_KUBECONFIG:-}
+        podPattern: ${PROD_DB_POD_PATTERN:-compass-configdb-rs0-{index}}
+        podIndex: 0
+
+      uri: mongodb://localhost:{port}/?directConnection=true
+      user: ${PROD_MONGO_USER}
+      password: ${PROD_MONGO_PASSWORD}
+      database: ${PROD_MONGO_DB:-ccp-ext-config}
+
+      infraCluster:
+        collection: infra-cluster
+        primaryKey: _id
+        matchFields: [domain, userDomain, name, uuid]
+        displayFields: [_id, name, domain, project, type, state, region, az, created_at]
+        related: []
+
+    # ---- Postgres / MySQL alternative ----------------------------------
+    # Swap the block above for this shape if a SQL backend is ever used.
+    # db:
+    #   driver: postgres
+    #   host: ${DB_HOST}
+    #   port: 5432
+    #   database: ${DB_NAME}
+    #   user: ${DB_USER}
+    #   password: ${DB_PASSWORD}
+    #   infraCluster:
+    #     table: infra_clusters
+    #     primaryKey: id
+    #     matchColumns: [name, cluster_name]
+    #     displayColumns: [id, name, status, created_at]
+    #     related:
+    #       - { table: infra_cluster_nodes, fk: cluster_id }
