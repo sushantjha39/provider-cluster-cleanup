@@ -24,9 +24,12 @@ const { parseVmList } = require('./core/vm-list');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const PORT = Number(process.env.PORT || 4300);
 
-// Loopback only. This process can delete infrastructure and holds DB
-// credentials — it must never be reachable from the network.
-const HOST = '127.0.0.1';
+// Loopback by default: this process can delete infrastructure and holds DB
+// credentials, so it must not be reachable from the network unless that is an
+// explicit, deliberate choice. Running as a Kubernetes Service is such a case —
+// set BIND_HOST=0.0.0.0 there and rely on the Service/NetworkPolicy for
+// isolation. Never expose it through a public Ingress.
+const HOST = process.env.BIND_HOST || '127.0.0.1';
 
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
 
@@ -624,7 +627,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  log.heading('qa dashboard');
-  log.ok(`http://${HOST}:${PORT}`);
-  log.info(log.c.dim('Loopback only. Ctrl-C to stop.'));
+  log.heading('provider cluster cleanup');
+  log.ok(`http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  if (HOST === '127.0.0.1') {
+    log.info(log.c.dim('Loopback only. Ctrl-C to stop.'));
+  } else {
+    log.warn(`Listening on ${HOST} — reachable from the network. Keep it behind`);
+    log.warn('a ClusterIP Service; never expose it publicly.');
+  }
 });

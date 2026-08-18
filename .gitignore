@@ -8,3 +8,6 @@ logs/
 
 # Editor/tool settings can capture pasted tokens — keep them out.
 .claude/
+
+# Real secret manifests never get committed.
+k8s/secret.yaml

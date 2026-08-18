@@ -1,0 +1,154 @@
+# Provider cluster cleanup — in-cluster deployment.
+#
+#   kubectl apply -f k8s/secret.yaml -f k8s/deployment.yaml -n uhc-dev
+#
+# Reach it with:
+#   kubectl port-forward svc/provider-cluster-cleanup 4300:4300 -n uhc-dev
+#
+# Deliberately a ClusterIP with no Ingress. Anyone who can open this page can
+# delete VMs and database records, so access is gated on cluster access rather
+# than on a login page this tool does not have.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: provider-cluster-cleanup-config
+  labels:
+    app: provider-cluster-cleanup
+data:
+  config.yaml: |
+    defaultEnv: dev-lmu
+
+    environments:
+      dev-lmu:
+        baseUrl: ${CONSOLE_BASE_URL:-https://dev-console-lmu.apeiro-digital.com}
+        region: ${CE_REGION:-r001}
+        deleteDelayMs: 1000
+
+        endpoints:
+          vmDelete: /api/v2.1/computes/domain/{domain}/project/{project}/computes/{vmId}/
+          vms: /api/v2.1/computes/domain/{domain}/project/{project}/computes/
+
+        admin:
+          baseUrl: ${ADMIN_BASE_URL:-https://dev-admin-lmu.apeiro-digital.com}
+          token: ${ADMIN_TOKEN}
+          pageSize: 200
+          endpoints:
+            computes: /adminapi/v2/compute/computes-list/
+            projects: /api/auth-service-admin/v1/projects
+          auth:
+            baseUrl: ${AUTH_BASE_URL:-}
+            realm: ${AUTH_REALM:-cloud}
+            clientId: ${AUTH_CLIENT_ID:-controller}
+            grantType: password
+            username: ${ADMIN_USERNAME}
+            password: ${ADMIN_PASSWORD}
+
+        db:
+          driver: mongodb
+
+          # No tunnel in-cluster. Pointing at the headless replica-set service
+          # lets the driver find the PRIMARY itself, so deletes never hit a
+          # secondary and there is no pod index to choose.
+          portForward:
+            enabled: false
+
+          uri: mongodb://compass-configdb-rs0.uhc-dev.svc.cluster.local:27017/?replicaSet=rs0
+          user: ${MONGO_USER}
+          password: ${MONGO_PASSWORD}
+          database: ${MONGO_DB:-ccp-ext-config}
+
+          infraCluster:
+            collection: infra-cluster
+            primaryKey: _id
+            matchFields: [domain, userDomain, name, uuid]
+            displayFields: [_id, name, domain, project, type, state, region, az, created_at]
+            related: []
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-cluster-cleanup
+  labels:
+    app: provider-cluster-cleanup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provider-cluster-cleanup
+  template:
+    metadata:
+      labels:
+        app: provider-cluster-cleanup
+    spec:
+      imagePullSecrets:
+        - name: docker-registry-key
+      containers:
+        - name: app
+          image: registry.coredge.io/qa/provider-cluster-cleanup:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4300
+          env:
+            # Required so the Service can reach it; see the note in Dockerfile.
+            - name: BIND_HOST
+              value: "0.0.0.0"
+            - name: QA_CONFIG
+              value: /config/config.yaml
+          envFrom:
+            - secretRef:
+                name: provider-cluster-cleanup-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          readinessProbe:
+            httpGet:
+              path: /api/config
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /api/config
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: provider-cluster-cleanup-config
+        # Audit log is written here. emptyDir means it is lost on restart —
+        # swap for a PVC if the trail needs to outlive the pod.
+        - name: logs
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provider-cluster-cleanup
+  labels:
+    app: provider-cluster-cleanup
+spec:
+  type: ClusterIP
+  selector:
+    app: provider-cluster-cleanup
+  ports:
+    - name: http
+      port: 4300
+      targetPort: http
