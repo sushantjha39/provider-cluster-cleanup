@@ -6,8 +6,5 @@ logs/
 *.log
 .DS_Store
 
-# Claude Code records the exact commands it has been allowed to run, which can
-# include tokens and passwords typed into curl. These files are rewritten by the
-# tool itself, so scrubbing them by hand does not stick — never track them.
-.claude/settings.json
-.claude/settings.local.json
+# Editor/tool settings can capture pasted tokens — keep them out.
+.claude/
