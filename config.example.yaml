@@ -59,12 +59,28 @@ environments:
       auth:
         # Keycloak host. Defaults to admin.baseUrl above; set it only when the
         # identity provider sits on a different host.
+        #
+        # This environment publishes Keycloak, so the default public host works
+        # and no tunnel is needed. To mint through the in-cluster Keycloak
+        # instead, set both in .env:
+        #   AUTH_BASE_URL=http://keycloak
+        #   AUTH_PORT_FORWARD=true
         baseUrl: ${AUTH_BASE_URL:-}
         realm: ${AUTH_REALM:-cloud}
         clientId: ${AUTH_CLIENT_ID:-controller}
         grantType: password
         username: ${ADMIN_USERNAME}
         password: ${ADMIN_PASSWORD}
+
+        # Reach a cluster-internal Keycloak through `kubectl port-forward`,
+        # exactly as the DB cleanup reaches the config-DB pod. Off here.
+        portForward:
+          enabled: ${AUTH_PORT_FORWARD:-false}
+          namespace: ${AUTH_NAMESPACE:-uhc-dev}
+          service: ${AUTH_SERVICE:-keycloak}
+          remotePort: ${AUTH_REMOTE_PORT:-80}
+          localPort: ${AUTH_LOCAL_PORT:-9098}
+          kubeconfig: ${AUTH_KUBECONFIG:-}
         # tokenPath defaults to /auth/realms/{realm}/protocol/openid-connect/token
         # tokenPath: /auth/realms/{realm}/protocol/openid-connect/token
         # Or bypass all of the above with a full URL:
@@ -164,13 +180,31 @@ environments:
         projects: /api/auth-service-admin/v1/projects
 
       auth:
-        # Blank baseUrl falls back to admin.baseUrl above.
-        baseUrl: ${PROD_AUTH_BASE_URL:-}
-        realm: ${PROD_AUTH_REALM:-cloud}
+        # Keycloak is not published for this environment: `keycloak` is the
+        # in-cluster Service name, which resolves inside the cluster and nowhere
+        # else. That is why the equivalent wget works from a pod and fails from
+        # a laptop — so the request goes through the tunnel configured below.
+        baseUrl: ${PROD_AUTH_BASE_URL:-http://keycloak}
+        realm: ${PROD_AUTH_REALM:-uhc-dha}
         clientId: ${PROD_AUTH_CLIENT_ID:-controller}
         grantType: password
         username: ${PROD_ADMIN_USERNAME}
         password: ${PROD_ADMIN_PASSWORD}
+
+        # The namespace below is where svc/keycloak was found; point it at
+        # another cluster with PROD_AUTH_NAMESPACE + PROD_AUTH_KUBECONFIG if
+        # this environment's identity provider lives elsewhere.
+        portForward:
+          enabled: ${PROD_AUTH_PORT_FORWARD:-true}
+          namespace: ${PROD_AUTH_NAMESPACE:-uhc-dev}
+          service: ${PROD_AUTH_SERVICE:-keycloak}
+          remotePort: ${PROD_AUTH_REMOTE_PORT:-80}
+          localPort: ${PROD_AUTH_LOCAL_PORT:-9099}
+          kubeconfig: ${PROD_AUTH_KUBECONFIG:-}
+
+        # Tried only if the tunnel cannot be opened (no kubectl, no cluster
+        # access), so minting degrades instead of dying.
+        fallbackBaseUrl: ${PROD_AUTH_FALLBACK_BASE_URL:-}
 
     db:
       driver: mongodb

@@ -6,9 +6,10 @@ const log = require('./logger');
 
 /**
  * Manages `kubectl port-forward` as a child process so the app can reach a
- * cluster-internal service (the Mongo replica-set pod) without the user
- * running the command by hand. The tunnel is always torn down in a finally
- * block — a leaked forward holds the local port and breaks the next run.
+ * cluster-internal service (the Mongo replica-set pod, the Keycloak service)
+ * without the user running the command by hand. The tunnel is always torn down
+ * in a finally block — a leaked forward holds the local port and breaks the
+ * next run.
  */
 
 function which(cmd) {
@@ -63,20 +64,74 @@ function resolvePodName(config = {}) {
   return null;
 }
 
+/**
+ * Resolve what to forward to. Pods stay addressable exactly as before;
+ * services are how a cluster-internal hostname like `http://keycloak` is
+ * reached, since that DNS name resolves inside the cluster and nowhere else.
+ *
+ *   service: keycloak       ->  svc/keycloak
+ *   resource: svc/keycloak  ->  used verbatim (any target kubectl accepts)
+ *   pod / podPattern        ->  pods/<name>
+ */
+function resolveTarget(config = {}) {
+  if (config.resource) return String(config.resource);
+  if (config.service) return `svc/${config.service}`;
+  const pod = resolvePodName(config);
+  return pod ? `pods/${pod}` : null;
+}
+
+/**
+ * `enabled` usually arrives as a string, because it comes from a ${VAR}
+ * expansion in config.yaml — and the string 'false' is truthy. Compare
+ * textually so `enabled: ${AUTH_PORT_FORWARD:-true}` behaves as written.
+ */
+function isEnabled(value, fallback = true) {
+  if (value === undefined || value === null || value === '') return fallback;
+  return !/^(false|0|no|off)$/i.test(String(value).trim());
+}
+
+/**
+ * A silent timeout is usually not the forward's fault: kubectl prints nothing
+ * while it dials an API server it cannot reach, so a dropped VPN looks exactly
+ * like a bad port. Probe the server and return its complaint, so the message
+ * names the real cause. `get --raw=/version` has to reach the server, unlike
+ * `kubectl version`, which happily reports the client alone.
+ */
+function probeCluster({ kubeconfig, context } = {}) {
+  const argv = ['get', '--raw=/version', '--request-timeout=5s'];
+  if (context) argv.push('--context', context);
+  if (kubeconfig) argv.push('--kubeconfig', kubeconfig);
+
+  return new Promise((resolve) => {
+    execFile('kubectl', argv, { timeout: 8000 }, (err, stdout, stderr) => {
+      if (!err) return resolve(null);
+      const detail = String(stderr || err.message)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line && !/^E\d{4}|memcache|Unhandled Error/.test(line))[0];
+      resolve(detail || 'kubectl could not reach the cluster');
+    });
+  });
+}
+
 async function open(options = {}) {
   const {
     namespace,
-    remotePort = 27017,
-    localPort,
     kubeconfig,
     context,
     timeoutMs = 20000,
   } = options;
 
-  const pod = resolvePodName(options);
+  // Ports come out of config as strings after ${VAR} expansion.
+  const remotePort = Number(options.remotePort) || 27017;
+  const localPort = Number(options.localPort) || undefined;
 
-  if (!pod) {
-    throw new Error('portForward needs `pod`, or `podPattern` + `podIndex`.');
+  const target = resolveTarget(options);
+
+  if (!target) {
+    throw new Error(
+      'portForward needs `service`, `resource`, `pod`, or `podPattern` + `podIndex`.'
+    );
   }
   if (!namespace) throw new Error('portForward.namespace is required (e.g. uhc-dev)');
 
@@ -92,7 +147,7 @@ async function open(options = {}) {
   }
 
   const port = localPort || (await freePort());
-  const args = ['port-forward', `pods/${pod}`, `${port}:${remotePort}`, '-n', namespace];
+  const args = ['port-forward', target, `${port}:${remotePort}`, '-n', namespace];
   if (context) args.push('--context', context);
   if (kubeconfig) args.push('--kubeconfig', kubeconfig);
 
@@ -124,10 +179,10 @@ async function open(options = {}) {
    */
   const explain = (raw) => {
     const manual =
-      `kubectl port-forward pods/${pod} ${port}:${remotePort} -n ${namespace}`;
+      `kubectl port-forward ${target} ${port}:${remotePort} -n ${namespace}`;
     const hint =
       `\n\nOpen the tunnel yourself and retry — the app reuses an existing one:\n  ${manual}` +
-      `\n\nOr set db.portForward.kubeconfig in config.yaml (or KUBECONFIG in .env)` +
+      `\n\nOr set the block's portForward.kubeconfig in config.yaml (or KUBECONFIG in .env)` +
       ` to a kubeconfig for the cluster hosting namespace "${namespace}".`;
 
     // No kubeconfig at all: kubectl falls back to localhost:8080.
@@ -143,8 +198,21 @@ async function open(options = {}) {
   };
 
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
       handle.close();
+
+      // kubectl said nothing at all: ask the API server whether it is even
+      // reachable before blaming the forward.
+      const unreachable = stderr ? null : await probeCluster({ kubeconfig, context });
+      if (unreachable) {
+        return reject(
+          new Error(
+            `Cannot reach the cluster API server, so the tunnel never opened: ${unreachable}` +
+              `\n\nCheck the VPN and that this kubeconfig points at a live cluster, then retry.`
+          )
+        );
+      }
+
       reject(new Error(explain(stderr || `timed out after ${timeoutMs}ms`)));
     }, timeoutMs);
 
@@ -179,7 +247,7 @@ async function open(options = {}) {
     });
   });
 
-  log.debug(`port-forward ready on 127.0.0.1:${port} -> ${pod}:${remotePort}`);
+  log.debug(`port-forward ready on 127.0.0.1:${port} -> ${target}:${remotePort}`);
   return handle;
 }
 
@@ -189,7 +257,7 @@ async function open(options = {}) {
  * used as-is, for when the tunnel is already open in another terminal.
  */
 async function withForward(config, fn) {
-  if (!config || config.enabled === false) {
+  if (!config || !isEnabled(config.enabled)) {
     return fn({ port: config?.localPort, reused: true, close: async () => {} });
   }
   const handle = await open(config);
@@ -200,4 +268,7 @@ async function withForward(config, fn) {
   }
 }
 
-module.exports = { open, withForward, freePort, portInUse, which, resolvePodName };
+module.exports = {
+  open, withForward, freePort, portInUse, which, resolvePodName, resolveTarget, isEnabled,
+  probeCluster,
+};

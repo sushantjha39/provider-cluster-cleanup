@@ -45,6 +45,48 @@ and sent per-request as `x-api-token`, so it never lands on disk and disappears
 when you close the tab. `API_TOKEN` in `.env` works as a fallback if you'd
 rather not paste it each time.
 
+## Minting tokens from an in-cluster Keycloak
+
+Some environments do not publish Keycloak. Its address there is a Service DNS
+name — `http://keycloak` — which resolves inside the cluster and nowhere else,
+so the password grant that works from a pod:
+
+```bash
+wget --post-data="username=...&password=...&client_id=controller&grant_type=password" \
+  -O - "http://keycloak/auth/realms/uhc-dha/protocol/openid-connect/token"
+```
+
+fails from a laptop. Configure `admin.auth.portForward` and the tool opens a
+`kubectl port-forward` to `svc/keycloak` for the duration of the request, the
+same way the DB cleanup reaches the config-DB pod:
+
+```yaml
+    admin:
+      auth:
+        baseUrl: http://keycloak
+        realm: uhc-dha
+        portForward:
+          enabled: true
+          namespace: uhc-dev
+          service: keycloak
+          remotePort: 80
+          localPort: 9099
+```
+
+Two details make this work, and both are easy to get wrong by hand:
+
+- The request carries the original `Host: keycloak`, because this Keycloak
+  derives the issuer from it. Without it the token comes back stamped
+  `iss: http://127.0.0.1:9099/...` and any API that validates the issuer
+  rejects it. (`fetch` cannot send `Host` — it is a forbidden header there —
+  so the token request goes out through `node:http`.)
+- With no `portForward.kubeconfig` set, the most recently uploaded kubeconfig
+  from the DB tab is used, since a laptop's default context often has no
+  clusters in it at all.
+
+Set `fallbackBaseUrl` to a publicly-routable Keycloak to keep minting working
+when the tunnel cannot be opened (no kubectl, no cluster access).
+
 ## Tasks
 
 ### `vm:delete` — delete provider VMs
