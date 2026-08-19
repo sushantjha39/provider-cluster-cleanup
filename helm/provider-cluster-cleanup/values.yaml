@@ -1,0 +1,120 @@
+# Provider cluster cleanup — Helm values.
+#
+# Minimum you must set before installing:
+#   secrets.adminUsername / secrets.adminPassword   (mint admin API tokens)
+#   secrets.mongoUser     / secrets.mongoPassword   (config DB)
+#
+# Prefer not to put those in a values file? Set secrets.existingSecret to the
+# name of a Secret you created yourself and leave the rest blank.
+
+image:
+  repository: registry.coredge.io/qa/provider-cluster-cleanup
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: docker-registry-key
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 4300
+
+# Off by default and it should stay that way: anyone who can open this page can
+# delete VMs and database records, and the app has no login of its own. Access
+# is gated on cluster access via `kubectl port-forward`. Only enable this if you
+# put an authenticating proxy in front.
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+  tls: []
+
+# ---- What the tool talks to -------------------------------------------------
+config:
+  defaultEnv: dev-lmu
+
+  # Console API — where the VM deletes are sent.
+  consoleBaseUrl: https://dev-console-lmu.apeiro-digital.com
+  region: r001
+
+  # Pause between deletes so the provider API is not hammered.
+  deleteDelayMs: 1000
+
+  # Admin API — VM/project listing, and where ccpid comes from.
+  adminBaseUrl: https://dev-admin-lmu.apeiro-digital.com
+  adminPageSize: 200
+
+  # Keycloak. Blank authBaseUrl falls back to adminBaseUrl.
+  authBaseUrl: ""
+  authRealm: cloud
+  authClientId: controller
+
+  # ---- Config database ----
+  # In-cluster the app talks to the replica set directly, so the driver picks
+  # the PRIMARY itself — no port-forward and no replica pod to choose.
+  mongo:
+    # Headless replica-set service. Include the namespace it lives in.
+    uri: mongodb://compass-configdb-rs0.uhc-dev.svc.cluster.local:27017/?replicaSet=rs0
+    database: ccp-ext-config
+    collection: infra-cluster
+
+    # Fields compared against the tenant name you type in. `domain` is the
+    # normal way in; `name`/`uuid` target one specific cluster.
+    matchFields:
+      - domain
+      - userDomain
+      - name
+      - uuid
+
+    displayFields:
+      - _id
+      - name
+      - domain
+      - project
+      - type
+      - state
+      - region
+      - az
+      - created_at
+
+    # Extra collections to clear alongside the cluster. Empty by default —
+    # add entries only when you are certain they belong to the tenant.
+    related: []
+    # related:
+    #   - collection: vpc_infrastructure
+    #     field: domain
+    #     parentField: domain
+
+# ---- Credentials -----------------------------------------------------------
+secrets:
+  # Use a Secret you manage yourself instead of the values below.
+  existingSecret: ""
+
+  adminUsername: ""
+  adminPassword: ""
+  mongoUser: ""
+  mongoPassword: ""
+
+# ---- Pod plumbing ----------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Audit log location. emptyDir is lost when the pod restarts; enable
+# persistence to keep the trail of what was deleted.
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

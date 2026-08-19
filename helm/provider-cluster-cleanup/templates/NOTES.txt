@@ -1,0 +1,29 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} installed as "{{ .Release.Name }}" in namespace {{ .Release.Namespace }}.
+
+Open it:
+
+  kubectl port-forward svc/{{ include "pcc.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+  then http://localhost:{{ .Values.service.port }}
+
+Talking to:
+  console API   {{ .Values.config.consoleBaseUrl }}
+  admin API     {{ .Values.config.adminBaseUrl }}
+  config DB     {{ .Values.config.mongo.database }} / {{ .Values.config.mongo.collection }}
+
+Check it came up:
+
+  kubectl rollout status deploy/{{ include "pcc.fullname" . }} -n {{ .Release.Namespace }}
+  kubectl logs -l app.kubernetes.io/instance={{ .Release.Name }} -n {{ .Release.Namespace }} --tail=30
+
+{{- if not .Values.persistence.enabled }}
+
+Note: the audit log is on an emptyDir, so the record of what was deleted is
+lost when the pod restarts. Set persistence.enabled=true to keep it.
+{{- end }}
+{{- if .Values.ingress.enabled }}
+
+WARNING: ingress is enabled. This page has no login of its own — anyone who can
+reach {{ .Values.ingress.host }} can delete VMs and database records. Put an
+authenticating proxy in front of it.
+{{- end }}

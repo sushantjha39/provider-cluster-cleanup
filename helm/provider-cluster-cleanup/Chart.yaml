@@ -1,0 +1,11 @@
+apiVersion: v2
+name: provider-cluster-cleanup
+description: Delete a tenant's provider VMs via the admin API and remove its infra-cluster entries from the config DB.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - cleanup
+  - tenant
+  - mongodb
+home: https://github.com/sushantjha39/provider-cluster-cleanup

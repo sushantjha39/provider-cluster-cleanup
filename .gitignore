@@ -11,3 +11,5 @@ logs/
 
 # Real secret manifests never get committed.
 k8s/secret.yaml
+helm/**/charts/
+helm/**/*.tgz

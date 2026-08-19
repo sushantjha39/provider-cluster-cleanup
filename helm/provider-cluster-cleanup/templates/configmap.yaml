@@ -1,0 +1,69 @@
+{{- /*
+The app's own config file. Non-secret values come from Helm; credentials stay
+as ${VAR} placeholders that the app expands from the Secret at runtime, so
+nothing sensitive is ever written into a ConfigMap.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pcc.fullname" . }}-config
+  labels:
+    {{- include "pcc.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    defaultEnv: {{ .Values.config.defaultEnv }}
+
+    environments:
+      {{ .Values.config.defaultEnv }}:
+        baseUrl: {{ .Values.config.consoleBaseUrl | quote }}
+        region: {{ .Values.config.region | quote }}
+        deleteDelayMs: {{ .Values.config.deleteDelayMs }}
+
+        endpoints:
+          vmDelete: /api/v2.1/computes/domain/{domain}/project/{project}/computes/{vmId}/
+          vms: /api/v2.1/computes/domain/{domain}/project/{project}/computes/
+
+        admin:
+          baseUrl: {{ .Values.config.adminBaseUrl | quote }}
+          token: ${ADMIN_TOKEN}
+          pageSize: {{ .Values.config.adminPageSize }}
+          endpoints:
+            computes: /adminapi/v2/compute/computes-list/
+            projects: /api/auth-service-admin/v1/projects
+          auth:
+            baseUrl: {{ .Values.config.authBaseUrl | quote }}
+            realm: {{ .Values.config.authRealm | quote }}
+            clientId: {{ .Values.config.authClientId | quote }}
+            grantType: password
+            username: ${ADMIN_USERNAME}
+            password: ${ADMIN_PASSWORD}
+
+        db:
+          driver: mongodb
+
+          # No tunnel needed in-cluster; the driver finds the PRIMARY itself.
+          portForward:
+            enabled: false
+
+          uri: {{ .Values.config.mongo.uri | quote }}
+          user: ${MONGO_USER}
+          password: ${MONGO_PASSWORD}
+          database: {{ .Values.config.mongo.database | quote }}
+
+          infraCluster:
+            collection: {{ .Values.config.mongo.collection | quote }}
+            primaryKey: _id
+            matchFields: [{{ join ", " .Values.config.mongo.matchFields }}]
+            displayFields: [{{ join ", " .Values.config.mongo.displayFields }}]
+            {{- if .Values.config.mongo.related }}
+            related:
+              {{- range .Values.config.mongo.related }}
+              - collection: {{ .collection | quote }}
+                field: {{ .field | quote }}
+                {{- if .parentField }}
+                parentField: {{ .parentField | quote }}
+                {{- end }}
+              {{- end }}
+            {{- else }}
+            related: []
+            {{- end }}
