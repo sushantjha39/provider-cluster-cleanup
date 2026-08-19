@@ -34,6 +34,7 @@ data:
             baseUrl: {{ .Values.config.authBaseUrl | quote }}
             realm: {{ .Values.config.authRealm | quote }}
             clientId: {{ .Values.config.authClientId | quote }}
+            hostHeader: {{ .Values.config.authHostHeader | default "" | quote }}
             grantType: password
             username: ${ADMIN_USERNAME}
             password: ${ADMIN_PASSWORD}

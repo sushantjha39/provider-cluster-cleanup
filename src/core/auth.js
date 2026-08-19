@@ -44,6 +44,12 @@ function assemble(baseUrl, auth = {}) {
  *   auth.tokenUrl                  full URL, wins outright
  *   auth.baseUrl + realm/tokenPath assembled
  *   admin.baseUrl + realm/tokenPath assembled (default)
+ *
+ * `auth.hostHeader` pins the Host separately from the address dialled. In
+ * cluster the Service has to be addressed by its namespaced FQDN, but Keycloak
+ * builds the issuer from the Host header, so without pinning it every token
+ * comes back stamped with the FQDN instead of the plain `http://keycloak` the
+ * APIs are known to accept.
  */
 function resolveTokenUrl(admin = {}) {
   const auth = admin.auth || {};
@@ -235,12 +241,12 @@ async function requestToken(auth) {
   const pf = auth.portForward;
   const viaTunnel = pf && portForward.isEnabled(pf.enabled, false);
 
-  if (!viaTunnel) return postToken(auth.tokenUrl, auth);
+  if (!viaTunnel) return postToken(auth.tokenUrl, auth, auth.hostHeader);
 
   const hostname = new URL(auth.tokenUrl).hostname;
   if (await hostResolves(hostname)) {
     log.debug(`${hostname} resolves here — posting directly, no tunnel needed`);
-    return postToken(auth.tokenUrl, auth);
+    return postToken(auth.tokenUrl, auth, auth.hostHeader);
   }
 
   // Keycloak's service port, not Mongo's — open() defaults to 27017.
@@ -249,8 +255,9 @@ async function requestToken(auth) {
   try {
     return await portForward.withForward(forward, ({ port }) => {
       const { url, hostHeader } = tunnelledUrl(auth.tokenUrl, port, pf.scheme);
-      log.debug(`minting via tunnel ${url} (Host: ${hostHeader})`);
-      return postToken(url, auth, hostHeader);
+      const host = auth.hostHeader || hostHeader;
+      log.debug(`minting via tunnel ${url} (Host: ${host})`);
+      return postToken(url, auth, host);
     });
   } catch (err) {
     if (!auth.fallbackUrl) throw err;

@@ -13,3 +13,6 @@ logs/
 k8s/secret.yaml
 helm/**/charts/
 helm/**/*.tgz
+# ...except the bundled source, which IS the deploy artifact in bundled mode:
+# package-src.sh writes it and Argo CD can only see it if it is committed.
+!helm/**/files/src.tgz

@@ -11,7 +11,8 @@
     "start": "node src/server.js",
     "ui": "node src/server.js",
     "cli": "node src/cli.js",
-    "list": "node src/cli.js list"
+    "list": "node src/cli.js list",
+    "package": "bash scripts/package-src.sh"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

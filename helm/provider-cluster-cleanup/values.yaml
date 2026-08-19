@@ -7,11 +7,30 @@
 # Prefer not to put those in a values file? Set secrets.existingSecret to the
 # name of a Secret you created yourself and leave the rest blank.
 
+# ---- How the app gets into the cluster --------------------------------------
+# Two modes. Bundled source needs no registry access at all, which is the point
+# when you cannot push images yourself.
+bundledSource:
+  # true  : run a stock node image, unpack src.tgz from a ConfigMap, npm install
+  #         at startup. No image build, no registry push, no git credentials.
+  #         Requires the cluster to reach the npm registry.
+  # false : run a prebuilt image (see `image` below). Faster starts, needs a
+  #         registry the cluster can pull from.
+  enabled: true
+
+  # Stock image used in bundled mode; must be pullable by the cluster.
+  runtimeImage: node:20-alpine
+
+  # Extra npm flags, e.g. --registry=https://your-npm-proxy
+  npmFlags: ""
+
+# Only used when bundledSource.enabled is false.
 image:
   repository: registry.coredge.io/qa/provider-cluster-cleanup
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
+# Applies to either mode; harmless if the image needs no credentials.
 imagePullSecrets:
   - name: docker-registry-key
 
@@ -47,10 +66,20 @@ config:
   adminBaseUrl: https://dev-admin-lmu.apeiro-digital.com
   adminPageSize: 200
 
-  # Keycloak. Blank authBaseUrl falls back to adminBaseUrl.
-  authBaseUrl: ""
+  # Keycloak. In cluster this MUST be the Service, not the public host: a pod
+  # normally has no route to the internet, and a blank value here falls back to
+  # adminBaseUrl above — which is what `POST /api/token — Token request failed:
+  # fetch failed` looks like. Namespace-qualified so the chart can be installed
+  # outside uhc-dev.
+  authBaseUrl: http://keycloak.uhc-dev.svc.cluster.local
   authRealm: cloud
   authClientId: controller
+
+  # Keycloak builds the issuer from the Host header, so the FQDN above would
+  # stamp tokens `iss: http://keycloak.uhc-dev.svc.cluster.local/...`. Pin the
+  # short Service name and they read `iss: http://keycloak/...` instead — the
+  # form the admin API is known to accept. Clear this if authBaseUrl is public.
+  authHostHeader: keycloak
 
   # ---- Config database ----
   # In-cluster the app talks to the replica set directly, so the driver picks

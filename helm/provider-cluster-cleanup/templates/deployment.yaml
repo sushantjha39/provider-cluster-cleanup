@@ -17,6 +17,12 @@ spec:
         # Roll the pod when the config changes, otherwise an edited ConfigMap
         # is silently ignored until something else triggers a restart.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.bundledSource.enabled }}
+        # Repackaging src.tgz has to roll the pod as well, or the initContainer
+        # keeps serving whatever source it unpacked at the last restart — the
+        # code changes and the running app does not.
+        checksum/src: {{ include (print $.Template.BasePath "/source-configmap.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -25,13 +31,51 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # No Kubernetes API token is mounted. The app has no business talking to
+      # the API server in this mode, and without a token it cannot read or
+      # affect any other workload in the namespace even if it tried.
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+      {{- if .Values.bundledSource.enabled }}
+      initContainers:
+        # Unpack the source shipped in the ConfigMap and install the three
+        # runtime dependencies. Runs once per pod start; needs npm reachable.
+        - name: install
+          image: {{ .Values.bundledSource.runtimeImage }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              tar xzf /bundle/src.tgz -C /app
+              cd /app
+              npm install --omit=dev --omit=optional --no-audit --no-fund {{ .Values.bundledSource.npmFlags }}
+              echo "ready: $(ls /app/src | tr '\n' ' ')"
+          volumeMounts:
+            - name: bundle
+              mountPath: /bundle
+              readOnly: true
+            - name: app
+              mountPath: /app
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      {{- end }}
       containers:
         - name: app
+          {{- if .Values.bundledSource.enabled }}
+          image: {{ .Values.bundledSource.runtimeImage }}
+          workingDir: /app
+          command: ["node", "src/server.js"]
+          {{- else }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
@@ -48,6 +92,12 @@ spec:
             - secretRef:
                 name: {{ include "pcc.secretName" . }}
           volumeMounts:
+            {{- if .Values.bundledSource.enabled }}
+            # Same volume the initContainer unpacked into — without this the
+            # app starts against an empty /app and cannot find its modules.
+            - name: app
+              mountPath: /app
+            {{- end }}
             - name: config
               mountPath: /config
               readOnly: true
@@ -69,13 +119,23 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            # Bundled mode installs into /app at runtime, so that path must be
+            # writable; it is a per-pod emptyDir, not a shared volume.
+            readOnlyRootFilesystem: {{ not .Values.bundledSource.enabled }}
             capabilities:
               drop: ["ALL"]
       volumes:
         - name: config
           configMap:
             name: {{ include "pcc.fullname" . }}-config
+        {{- if .Values.bundledSource.enabled }}
+        - name: bundle
+          configMap:
+            name: {{ include "pcc.fullname" . }}-src
+        # Holds the unpacked source plus node_modules. Scoped to this pod.
+        - name: app
+          emptyDir: {}
+        {{- end }}
         - name: logs
         {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:

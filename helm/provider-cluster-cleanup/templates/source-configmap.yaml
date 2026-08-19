@@ -1,0 +1,16 @@
+{{- if .Values.bundledSource.enabled }}
+{{- /*
+Ships the app source with the chart, so it can be deployed without building or
+pushing an image. An initContainer unpacks this and runs `npm install`.
+
+Regenerate with `npm run package` after changing anything under src/.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pcc.fullname" . }}-src
+  labels:
+    {{- include "pcc.labels" . | nindent 4 }}
+binaryData:
+  src.tgz: {{ .Files.Get "files/src.tgz" | b64enc }}
+{{- end }}
